@@ -44,7 +44,7 @@ options:
     qgroups:
         required: false
         description:
-            - list of qgroup ids, adds the newly created subvolume to a qgroups
+            - list of qgroup ids, adds the newly created subvolume to a qgroup
         default: []
     commit:
         required: false
@@ -76,12 +76,13 @@ EXAMPLES = """
     commit: each
 """
 
+
 def get_subvolumes(path, subs=None):
     if subs is None:
         subs = []
     subvolumes = os.listdir(path)
     for sub in subvolumes:
-        sub = '{}/{}'.format(path, sub)
+        sub = os.path.sep.join([path, sub])
 
         if not os.path.isdir(sub):
             continue
@@ -108,7 +109,7 @@ def main():
         'commands': [],
         'check': module.check_mode
     }
-    module.params['path'] = module.params['path'].rstrip('/')
+    module.params['path'] = module.params['path'].rstrip(os.path.sep)
     module.params['recursive'] = module.boolean(module.params['recursive'])
 
     if module.params['state'] == 'present':
@@ -120,17 +121,17 @@ def main():
             )
             result['commands'].append(cmd)
             if not module.check_mode:
-                res = module.run_command(cmd, check_rc=True)
+                module.run_command(cmd, check_rc=True)
                 result['changed'] = True
 
         elif module.params['recursive']:
             # Check parent subvolumes and create it if they doesnt exist
-            parents = module.params['path'].split('/')
+            parents = module.params['path'].split(os.path.sep)
             for idx, subvolume in enumerate(parents):
                 if len(subvolume) == 0:
                     continue
 
-                subvolume = '/'.join(parents[:idx+1])
+                subvolume = os.path.sep.join(parents[:idx+1])
 
                 if not os.path.exists(subvolume):
                     cmd = 'btrfs subvolume create {qgroups} {subvolume}'.format(
@@ -140,7 +141,7 @@ def main():
 
                     result['commands'].append(cmd)
                     if not module.check_mode:
-                        res = module.run_command(cmd, check_rc=True)
+                        module.run_command(cmd, check_rc=True)
                         result['changed'] = True
 
     elif module.params['state'] == 'absent':
@@ -156,7 +157,7 @@ def main():
                 )
                 result['commands'].append(cmd)
                 if not module.check_mode:
-                    res = module.run_command(cmd, check_rc=True)
+                    module.run_command(cmd, check_rc=True)
                     result['changed'] = True
 
             elif module.params['recursive']:
@@ -173,7 +174,7 @@ def main():
 
                         result['commands'].append(cmd)
                         if not module.check_mode:
-                            res = module.run_command(cmd, check_rc=True)
+                            module.run_command(cmd, check_rc=True)
                             result['changed'] = True
 
     if module.check_mode and result['commands']:
