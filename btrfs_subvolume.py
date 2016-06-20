@@ -38,13 +38,13 @@ options:
         choices: ["present", "absent"]
     path:
         description:
-            - subvolume absolete path
+            - subvolume absolute path
         required: true
         default: null
     qgroups:
         required: false
         description:
-            - list of qgroup ids, adds the newly created subvolume to a qgroups
+            - list of qgroup ids, adds the newly created subvolume to a qgroup
         default: []
     commit:
         required: false
@@ -64,24 +64,27 @@ EXAMPLES = """
 # Example for Ansible Playbooks.
 - name: Recursive create given subvolume path
   btrfs_subvolume:
-    state: present
-    path: /storage/test/test1/test2
-    qgroups: [1, 2, 3]
-    recursive: true
+    state: 'present'
+    path: '/storage/test/test1/test2'
+    qgroups:
+      - '1/100'
+      - '1/101'
+    recursive: True
 
-- name: Delete given path
+- name: Delete given Btrfs subvolume
   btrfs_subvolume:
-    state: absent
-    path: /storage/test/test1/test2
-    commit: each
+    state: 'absent'
+    path: '/storage/test/test1/test2'
+    commit: 'each'
 """
+
 
 def get_subvolumes(path, subs=None):
     if subs is None:
         subs = []
     subvolumes = os.listdir(path)
     for sub in subvolumes:
-        sub = '{}/{}'.format(path, sub)
+        sub = os.path.sep.join([path, sub])
 
         if not os.path.isdir(sub):
             continue
@@ -95,11 +98,11 @@ def get_subvolumes(path, subs=None):
 def main():
     module = AnsibleModule(
         argument_spec=dict(
-            state=dict(required=True, choices=['present', 'absent']),
-            path=dict(required=True),
-            qgroups=dict(required=False, default=[]),
-            commit=dict(required=False, choices=['after', 'each', 'no'], default='no'),
-            recursive=dict(required=False, choices=BOOLEANS, default='false')
+            state=dict(required=True, choices=['present', 'absent'], type='str'),
+            path=dict(required=True, default=None, type='str'),
+            qgroups=dict(default=[], type='list'),
+            commit=dict(default='no', choices=['after', 'each', 'no'], type='str'),
+            recursive=dict(default='False', type='bool')
         ),
         supports_check_mode=True
     )
@@ -108,39 +111,38 @@ def main():
         'commands': [],
         'check': module.check_mode
     }
-    module.params['path'] = module.params['path'].rstrip('/')
-    module.params['recursive'] = module.boolean(module.params['recursive'])
+    param_path = module.params['path'].rstrip(os.path.sep)
 
     if module.params['state'] == 'present':
         # Creating subvolume
-        if not os.path.exists(module.params['path']) and not module.params['recursive']:
+        if not os.path.exists(param_path) and not module.params['recursive']:
             cmd = 'btrfs subvolume create {qgroups} {subvolume}'.format(
                 qgroups=' -i '.join(['']+module.params['qgroups']),
-                subvolume=module.params['path']
+                subvolume=param_path,
             )
             result['commands'].append(cmd)
             if not module.check_mode:
-                res = module.run_command(cmd, check_rc=True)
+                module.run_command(cmd, check_rc=True)
                 result['changed'] = True
 
         elif module.params['recursive']:
             # Check parent subvolumes and create it if they doesnt exist
-            parents = module.params['path'].split('/')
+            parents = param_path.split(os.path.sep)
             for idx, subvolume in enumerate(parents):
                 if len(subvolume) == 0:
                     continue
 
-                subvolume = '/'.join(parents[:idx+1])
+                subvolume = os.path.sep.join(parents[:idx+1])
 
                 if not os.path.exists(subvolume):
                     cmd = 'btrfs subvolume create {qgroups} {subvolume}'.format(
                         qgroups=' -i '.join(['']+module.params['qgroups']),
-                        subvolume=subvolume
+                        subvolume=subvolume,
                     )
 
                     result['commands'].append(cmd)
                     if not module.check_mode:
-                        res = module.run_command(cmd, check_rc=True)
+                        module.run_command(cmd, check_rc=True)
                         result['changed'] = True
 
     elif module.params['state'] == 'absent':
@@ -149,20 +151,20 @@ def main():
         if module.params['commit'] != 'no':
             commit = '--commit-{}'.format(module.params['commit'])
 
-        if os.path.exists(module.params['path']):
+        if os.path.exists(param_path):
             if not module.params['recursive']:
                 cmd = 'btrfs subvolume delete {commit} {subvolume}'.format(
-                    commit=commit, subvolume=module.params['path']
+                    commit=commit, subvolume=param_path
                 )
                 result['commands'].append(cmd)
                 if not module.check_mode:
-                    res = module.run_command(cmd, check_rc=True)
+                    module.run_command(cmd, check_rc=True)
                     result['changed'] = True
 
             elif module.params['recursive']:
                 # reversed parent directories from end to beginning
-                subvolumes = get_subvolumes(module.params['path'])
-                subvolumes.insert(0, module.params['path'])
+                subvolumes = get_subvolumes(param_path)
+                subvolumes.insert(0, param_path)
 
                 for sub in reversed(subvolumes):
 
@@ -173,7 +175,7 @@ def main():
 
                         result['commands'].append(cmd)
                         if not module.check_mode:
-                            res = module.run_command(cmd, check_rc=True)
+                            module.run_command(cmd, check_rc=True)
                             result['changed'] = True
 
     if module.check_mode and result['commands']:
@@ -189,5 +191,5 @@ def main():
 
 # import module snippets
 from ansible.module_utils.basic import *
-
-main()
+if __name__ == '__main__':
+    main()
